@@ -37,7 +37,49 @@
         <div id="models" class="tab-content">
             <h3>Your Models</h3>
             <div class="item-list">
-                <p>No models yet. Create a spreadsheet and train a model to get started!</p>
+                {% if models %}
+                    <div class="model-grid">
+                        {% for model in models %}
+                        <div class="model-card">
+                            <h4>{{ model.name }}</h4>
+                            <div class="model-details">
+                                <p><strong>Type:</strong> {{ model.model_type }}</p>
+                                <p><strong>Created:</strong> {{ model.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+                                <div class="model-columns">
+                                    <p><strong>Input Columns:</strong></p>
+                                    <ul class="column-list">
+                                        {% set column_names = spreadsheet_column_names.get(model.spreadsheet_id, {}) %}
+                                        {% set column_types = spreadsheet_column_types.get(model.spreadsheet_id, {}) %}
+                                        {% set input_cols = model.input_columns|from_json %}
+                                        {% for col in input_cols %}
+                                            <li>
+                                                {{ column_names.get(col, col) }}
+                                                {% if column_types.get(col) %}
+                                                    <span class="col-type type-{{ column_types[col] }}">{{ column_types[col] }}</span>
+                                                {% endif %}
+                                            </li>
+                                        {% endfor %}
+                                    </ul>
+                                    <p><strong>Output Column:</strong></p>
+                                    <ul class="column-list">
+                                        <li>
+                                            {{ column_names.get(model.output_column, model.output_column) }}
+                                            {% if column_types.get(model.output_column) %}
+                                                <span class="col-type type-{{ column_types[model.output_column] }}">{{ column_types[model.output_column] }}</span>
+                                            {% endif %}
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <div class="model-actions">
+                                <a href="{{ url_for('spreadsheet.edit', id=model.spreadsheet_id) }}" class="btn-view">View Spreadsheet</a>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p>No models yet. Create a spreadsheet and train a model to get started!</p>
+                {% endif %}
             </div>
         </div>
     </div>

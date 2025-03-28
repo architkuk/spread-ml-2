@@ -13,11 +13,12 @@ document.addEventListener('DOMContentLoaded', function () {
     const editorInput = document.getElementById('editor-input');
   
     // Default grid dimensions
-    const rows = 20;
+    const rows = 100;
     const cols = 10;
   
     // In-memory representation of spreadsheet data
     let spreadsheetData = {};
+    let columnNames = {};  // Store custom column names
   
     // Track the currently selected cell
     let selectedCell = null;
@@ -33,6 +34,15 @@ document.addEventListener('DOMContentLoaded', function () {
         spreadsheetData = JSON.parse(spreadsheetEl.dataset.initial);
       } catch (e) {
         console.error('Error parsing initial spreadsheet data:', e);
+      }
+    }
+  
+    // Load column names if available
+    if (spreadsheetEl.dataset.columnNames) {
+      try {
+        columnNames = JSON.parse(spreadsheetEl.dataset.columnNames);
+      } catch (e) {
+        console.error('Error parsing column names:', e);
       }
     }
   
@@ -82,7 +92,10 @@ document.addEventListener('DOMContentLoaded', function () {
       fetch(`/spreadsheet/save/${spreadsheetId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: spreadsheetData })
+        body: JSON.stringify({ 
+          data: spreadsheetData,
+          column_names: columnNames
+        })
       })
         .then(response => response.json())
         .then(data => {
@@ -130,6 +143,94 @@ document.addEventListener('DOMContentLoaded', function () {
     // -------------------------------
     // Formula Evaluation Functions
     // -------------------------------
+  
+    /**
+     * Load and display models for the spreadsheet.
+     */
+    function loadModels() {
+      fetch(`/ml/list/${spreadsheetId}`)
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            if (data.models.length > 0) {
+              modelsListEl.innerHTML = '';
+              data.models.forEach(model => {
+                const modelCard = document.createElement('div');
+                modelCard.className = 'model-card';
+                let metricsHtml = '';
+                if (model.type === 'regression') {
+                  metricsHtml = `
+                    <div class="model-metrics">
+                      <p><strong>R² Score:</strong> ${model.metrics.r2.toFixed(4)}</p>
+                      <p><strong>Mean Squared Error:</strong> ${model.metrics.mse.toFixed(4)}</p>
+                    </div>
+                  `;
+                } else {
+                  metricsHtml = `
+                    <div class="model-metrics">
+                      <p><strong>Accuracy:</strong> ${model.metrics.accuracy.toFixed(4)}</p>
+                    </div>
+                  `;
+                }
+
+                // Format column names with custom names if available
+                const formatColumn = (col) => model.source_column_names[col] || col;
+                const inputColumns = model.input_columns.map(formatColumn);
+                const outputColumn = formatColumn(model.output_column);
+                const inputsExample = model.input_columns.map((col) => `${col}1`).join(', ');
+                const formulaExample = `=<span class="model-name">${model.name}</span>(${inputsExample})`;
+                
+                // Add source spreadsheet info
+                const sourceInfo = model.source_spreadsheet.id === parseInt(spreadsheetId) 
+                  ? '' 
+                  : `<p class="source-info">Trained on spreadsheet: ${model.source_spreadsheet.name}</p>`;
+  
+                modelCard.innerHTML = `
+                  <h4>${model.name}</h4>
+                  ${sourceInfo}
+                  <p><strong>Type:</strong> ${model.type}</p>
+                  <div class="model-columns">
+                    <p><strong>Input Columns:</strong></p>
+                    <ul class="column-list">
+                      ${model.input_columns.map(col => `
+                        <li>
+                          ${formatColumn(col)}
+                          ${model.source_column_types[col] ? 
+                            `<span class="col-type type-${model.source_column_types[col]}">${model.source_column_types[col]}</span>` 
+                            : ''}
+                        </li>
+                      `).join('')}
+                    </ul>
+                    <p><strong>Output Column:</strong></p>
+                    <ul class="column-list">
+                      <li>
+                        ${outputColumn}
+                        ${model.source_column_types[model.output_column] ? 
+                          `<span class="col-type type-${model.source_column_types[model.output_column]}">${model.source_column_types[model.output_column]}</span>` 
+                          : ''}
+                      </li>
+                    </ul>
+                  </div>
+                  ${metricsHtml}
+                  <div class="formula-example">
+                    <p><strong>Usage:</strong> ${formulaExample}</p>
+                  </div>
+                  <p class="model-id" style="display:none;">${model.id}</p>
+                `;
+                modelsListEl.appendChild(modelCard);
+              });
+            } else {
+              modelsListEl.innerHTML = '<p>No models created yet.</p>';
+            }
+          } else {
+            modelsListEl.innerHTML = '<p>Error loading models.</p>';
+          }
+        })
+        .catch(error => {
+          modelsListEl.innerHTML = '<p>Error loading models.</p>';
+          console.error('Error:', error);
+        });
+    }
   
     /**
      * Evaluate a cell's formula if it starts with "=".
@@ -196,7 +297,9 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       const inputValues = [];
       let allValid = true;
-      for (const cellRef of cellRefs) {
+      for (let i = 0; i < cellRefs.length; i++) {
+        const cellRef = cellRefs[i];
+        const expectedType = model.source_column_types[model.input_columns[i]];
         const cellCoord = parseCellReference(cellRef);
         if (!cellCoord) {
           inputEl.classList.add('formula-error');
@@ -207,13 +310,27 @@ document.addEventListener('DOMContentLoaded', function () {
         const { row: cellRow, col: cellCol } = cellCoord;
         const cellKey = `${cellRow}-${cellCol}`;
         const cellValue = spreadsheetData[cellKey] || '';
-        if (cellValue && isNaN(parseFloat(cellValue))) {
-          inputEl.classList.add('formula-error');
-          inputEl.title = `Cell ${cellRef} must contain a numeric value`;
-          allValid = false;
-          break;
+        
+        // Handle type conversion if needed
+        let convertedValue = cellValue;
+        if (expectedType === 'number' && cellValue) {
+          try {
+            convertedValue = parseFloat(cellValue);
+            if (isNaN(convertedValue)) {
+              inputEl.classList.add('formula-error');
+              inputEl.title = `Cell ${cellRef} must contain a numeric value for input ${model.input_columns[i]}`;
+              allValid = false;
+              break;
+            }
+          } catch (e) {
+            inputEl.classList.add('formula-error');
+            inputEl.title = `Error converting cell ${cellRef} to number for input ${model.input_columns[i]}`;
+            allValid = false;
+            break;
+          }
         }
-        inputValues.push(cellValue ? parseFloat(cellValue) : 0);
+        
+        inputValues.push(convertedValue || 0);
       }
       if (!allValid) return;
   
@@ -258,6 +375,120 @@ document.addEventListener('DOMContentLoaded', function () {
     // -------------------------------
   
     /**
+     * Detect the type of a column based on its values.
+     * @param {number} col - Column index.
+     * @returns {string|null} Column type ('number', 'string', 'mixed', or null if empty).
+     */
+    function detectColumnType(col) {
+      let hasNumber = false;
+      let hasString = false;
+      let hasNonEmpty = false;
+      
+      // Check all cells in the column
+      for (let r = 0; r < rows; r++) {
+        const cellKey = `${r}-${col}`;
+        const value = spreadsheetData[cellKey];
+        
+        if (!value) {
+          continue;
+        }
+        
+        hasNonEmpty = true;
+        // Check if it's a number
+        if (!isNaN(parseFloat(value)) && isFinite(value)) {
+          hasNumber = true;
+        } else {
+          hasString = true;
+        }
+      }
+      
+      // If column is completely empty, return null
+      if (!hasNonEmpty) {
+        return null;
+      }
+      
+      // Determine column type
+      if (hasNumber && !hasString) {
+        return 'number';
+      } else if (hasString && !hasNumber) {
+        return 'string';
+      } else {
+        return 'mixed';
+      }
+    }
+  
+    /**
+     * Update column headers with type information and custom names.
+     */
+    function updateColumnHeaders() {
+      const headerRow = document.querySelector('.spreadsheet-table tr');
+      if (!headerRow) return;
+      
+      // Skip the first cell (corner cell)
+      for (let c = 0; c < cols; c++) {
+        const colHeader = headerRow.children[c + 1];
+        if (!colHeader) continue;
+        
+        const colType = detectColumnType(c);
+        const colLetter = String.fromCharCode(65 + c);
+        
+        // Clear existing content
+        colHeader.innerHTML = '';
+        
+        // Create container for column letter and type
+        const container = document.createElement('div');
+        container.className = 'col-header-container';
+        
+        // Add column letter/name
+        const letterDiv = document.createElement('div');
+        letterDiv.className = 'col-letter';
+        letterDiv.textContent = columnNames[colLetter] || colLetter;
+        letterDiv.dataset.col = colLetter;
+        letterDiv.contentEditable = true;
+        
+        // Add click handler for editing
+        letterDiv.addEventListener('click', function(e) {
+          e.stopPropagation();
+          this.focus();
+        });
+        
+        // Handle blur event to save changes
+        letterDiv.addEventListener('blur', function() {
+          const newName = this.textContent.trim();
+          if (newName) {
+            columnNames[this.dataset.col] = newName;
+          } else {
+            delete columnNames[this.dataset.col];
+          }
+        });
+        
+        // Handle keydown events
+        letterDiv.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            this.blur();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            this.textContent = columnNames[this.dataset.col] || this.dataset.col;
+            this.blur();
+          }
+        });
+        
+        container.appendChild(letterDiv);
+        
+        // Add type indicator if column is not empty
+        if (colType) {
+          const typeDiv = document.createElement('div');
+          typeDiv.className = `col-type type-${colType}`;
+          typeDiv.textContent = colType;
+          container.appendChild(typeDiv);
+        }
+        
+        colHeader.appendChild(container);
+      }
+    }
+  
+    /**
      * Creates and appends the spreadsheet grid (table) to the DOM.
      */
     function initSpreadsheet() {
@@ -270,7 +501,46 @@ document.addEventListener('DOMContentLoaded', function () {
       headerRow.appendChild(cornerCell);
       for (let c = 0; c < cols; c++) {
         const colHeader = document.createElement('th');
-        colHeader.textContent = String.fromCharCode(65 + c);
+        const colLetter = String.fromCharCode(65 + c);
+        const container = document.createElement('div');
+        container.className = 'col-header-container';
+        
+        const letterDiv = document.createElement('div');
+        letterDiv.className = 'col-letter';
+        letterDiv.textContent = columnNames[colLetter] || colLetter;
+        letterDiv.dataset.col = colLetter;
+        letterDiv.contentEditable = true;
+        
+        // Add click handler for editing
+        letterDiv.addEventListener('click', function(e) {
+          e.stopPropagation();
+          this.focus();
+        });
+        
+        // Handle blur event to save changes
+        letterDiv.addEventListener('blur', function() {
+          const newName = this.textContent.trim();
+          if (newName) {
+            columnNames[this.dataset.col] = newName;
+          } else {
+            delete columnNames[this.dataset.col];
+          }
+        });
+        
+        // Handle keydown events
+        letterDiv.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            this.blur();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            this.textContent = columnNames[this.dataset.col] || this.dataset.col;
+            this.blur();
+          }
+        });
+        
+        container.appendChild(letterDiv);
+        colHeader.appendChild(container);
         headerRow.appendChild(colHeader);
       }
       table.appendChild(headerRow);
@@ -308,6 +578,8 @@ document.addEventListener('DOMContentLoaded', function () {
             if (input.value && input.value.startsWith('=')) {
               evaluateFormula(input, r, c);
             }
+            // Update column headers after data change
+            updateColumnHeaders();
           });
 
           // Handle mouse events for selection
@@ -482,6 +754,9 @@ document.addEventListener('DOMContentLoaded', function () {
         table.appendChild(row);
       }
       spreadsheetEl.appendChild(table);
+      
+      // Update column headers with type information
+      updateColumnHeaders();
     }
   
     // -------------------------------
@@ -504,63 +779,6 @@ document.addEventListener('DOMContentLoaded', function () {
     // -------------------------------
     // Model Loading and Modal Functionality
     // -------------------------------
-  
-    /**
-     * Load and display models for the spreadsheet.
-     */
-    function loadModels() {
-      fetch(`/ml/list/${spreadsheetId}`)
-        .then(response => response.json())
-        .then(data => {
-          if (data.success) {
-            if (data.models.length > 0) {
-              modelsListEl.innerHTML = '';
-              data.models.forEach(model => {
-                const modelCard = document.createElement('div');
-                modelCard.className = 'model-card';
-                let metricsHtml = '';
-                if (model.type === 'regression') {
-                  metricsHtml = `
-                    <div class="model-metrics">
-                      <p><strong>R² Score:</strong> ${model.metrics.r2.toFixed(4)}</p>
-                      <p><strong>Mean Squared Error:</strong> ${model.metrics.mse.toFixed(4)}</p>
-                    </div>
-                  `;
-                } else {
-                  metricsHtml = `
-                    <div class="model-metrics">
-                      <p><strong>Accuracy:</strong> ${model.metrics.accuracy.toFixed(4)}</p>
-                    </div>
-                  `;
-                }
-                const inputsExample = model.input_columns.map((col) => `${col}1`).join(', ');
-                const formulaExample = `=<span class="model-name">${model.name}</span>(${inputsExample})`;
-  
-                modelCard.innerHTML = `
-                  <h4>${model.name}</h4>
-                  <p><strong>Type:</strong> ${model.type}</p>
-                  <p><strong>Inputs:</strong> ${model.input_columns.join(', ')}</p>
-                  <p><strong>Output:</strong> ${model.output_column}</p>
-                  ${metricsHtml}
-                  <div class="formula-example">
-                    <p><strong>Usage:</strong> ${formulaExample}</p>
-                  </div>
-                  <p class="model-id" style="display:none;">${model.id}</p>
-                `;
-                modelsListEl.appendChild(modelCard);
-              });
-            } else {
-              modelsListEl.innerHTML = '<p>No models created yet.</p>';
-            }
-          } else {
-            modelsListEl.innerHTML = '<p>Error loading models.</p>';
-          }
-        })
-        .catch(error => {
-          modelsListEl.innerHTML = '<p>Error loading models.</p>';
-          console.error('Error:', error);
-        });
-    }
   
     // Modal and Model Creation Elements
     const modelModal = document.getElementById('create-model-modal');
@@ -597,6 +815,7 @@ document.addEventListener('DOMContentLoaded', function () {
       outputColumnSelect.innerHTML = '<option value="">Select a column</option>';
       for (let c = 0; c < cols; c++) {
         const colLetter = String.fromCharCode(65 + c);
+        const colName = columnNames[colLetter] || colLetter;
   
         // Create input checkbox for each column
         const checkboxDiv = document.createElement('div');
@@ -608,7 +827,7 @@ document.addEventListener('DOMContentLoaded', function () {
         checkbox.id = `input_col_${colLetter}`;
         const label = document.createElement('label');
         label.htmlFor = `input_col_${colLetter}`;
-        label.textContent = colLetter;
+        label.textContent = colName;
         checkboxDiv.appendChild(checkbox);
         checkboxDiv.appendChild(label);
         inputColumnsContainer.appendChild(checkboxDiv);
@@ -616,7 +835,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // Create option for output column
         const option = document.createElement('option');
         option.value = colLetter;
-        option.textContent = colLetter;
+        option.textContent = colName;
         outputColumnSelect.appendChild(option);
       }
     }

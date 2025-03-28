@@ -12,7 +12,7 @@ def init_db():
         if not demo_user:
             # Create demo user
             demo_user = User(username='demo')
-            demo_user.set_password('demo123')
+            demo_user.set_password('cNrV70Mr$4#%')
             db.session.add(demo_user)
             db.session.commit()
             print("Demo user created successfully")

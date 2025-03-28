@@ -55,6 +55,7 @@
     overflow: auto;
     max-height: 70vh;
     margin-bottom: 2rem;
+    position: relative;
 }
 
 #spreadsheet {
@@ -76,6 +77,13 @@
     text-align: center;
     position: sticky;
     top: 0;
+    z-index: 10;
+}
+
+.spreadsheet-table th:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 20;
 }
 
 .spreadsheet-table td {
@@ -118,6 +126,8 @@
 .row-header {
     position: sticky;
     left: 0;
+    background-color: #f1f1f1;
+    z-index: 5;
 }
 
 /* Models panel */
@@ -262,4 +272,110 @@
   .spreadsheet-container {
     margin-top: 2rem;
   }
-  
+
+/* Column type indicators */
+.col-header-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+}
+
+.col-letter {
+  font-weight: bold;
+  font-size: 1.1em;
+  padding: 4px 0;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  border-radius: 3px;
+}
+
+.col-letter:hover {
+  background-color: #e0e0e0;
+}
+
+.col-letter:focus {
+  background-color: #e3f2fd;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.3);
+}
+
+.col-type {
+  font-size: 0.8em;
+  padding: 2px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+  font-weight: normal;
+}
+
+.type-number {
+  background-color: #e3f2fd;
+  color: #1976d2;
+}
+
+.type-string {
+  background-color: #f3e5f5;
+  color: #7b1fa2;
+}
+
+.type-mixed {
+  background-color: #fff3e0;
+  color: #f57c00;
+}
+
+.source-info {
+    color: #666;
+    font-size: 0.9em;
+    margin-bottom: 0.5rem;
+    font-style: italic;
+}
+
+.model-columns {
+    margin: 0.8rem 0;
+}
+
+.model-columns p {
+    margin-bottom: 0.3rem;
+    color: #666;
+}
+
+.column-list {
+    list-style: none;
+    padding-left: 1rem;
+    margin: 0.3rem 0 1rem 0;
+}
+
+.column-list li {
+    padding: 0.2rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.column-list li:last-child {
+    margin-bottom: 0;
+}
+
+.column-list .col-type {
+    font-size: 0.8em;
+    padding: 2px 6px;
+    border-radius: 3px;
+    white-space: nowrap;
+    font-weight: normal;
+}
+
+.column-list .type-number {
+    background-color: #e3f2fd;
+    color: #1976d2;
+}
+
+.column-list .type-string {
+    background-color: #f3e5f5;
+    color: #7b1fa2;
+}
+
+.column-list .type-mixed {
+    background-color: #fff3e0;
+    color: #f57c00;
+} 

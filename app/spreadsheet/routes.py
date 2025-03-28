@@ -46,19 +46,29 @@ def upload_csv():
             flash('CSV file must contain at least one row of data.')
             return redirect(url_for('main.home'))
         
-        # Convert to spreadsheet data format
+        # Extract column headers from first row
+        column_headers = csv_data[0]
+        
+        # Convert to spreadsheet data format, starting from second row
         spreadsheet_data = {}
-        for row_idx, row in enumerate(csv_data):  # Start from 0 to match spreadsheet's internal indexing
+        for row_idx, row in enumerate(csv_data[1:], start=1):  # Start from 1 to skip header row
             for col_idx, value in enumerate(row):
                 if value:  # Only store non-empty values
-                    cell_key = f"{row_idx}-{col_idx}"
+                    cell_key = f"{row_idx-1}-{col_idx}"
                     spreadsheet_data[cell_key] = value
         
-        # Create new spreadsheet with CSV data
+        # Create column names mapping (A=0, B=1, etc.)
+        column_names = {}
+        for i, header in enumerate(column_headers):
+            col_letter = chr(65 + i)  # Convert index to letter (0=A, 1=B, etc.)
+            column_names[col_letter] = header
+        
+        # Create new spreadsheet with CSV data and column names
         spreadsheet = Spreadsheet(
             name=name,
             user_id=current_user.id,
-            data=json.dumps(spreadsheet_data)
+            data=json.dumps(spreadsheet_data),
+            column_names=json.dumps(column_names)
         )
         db.session.add(spreadsheet)
         db.session.commit()
@@ -75,36 +85,54 @@ def upload_csv():
 def edit(id):
     spreadsheet = Spreadsheet.query.get_or_404(id)
     
-    # Ensure user owns this spreadsheet
+    # Check if user owns this spreadsheet
     if spreadsheet.user_id != current_user.id:
-        flash('You do not have permission to access this spreadsheet.')
+        flash('You do not have permission to edit this spreadsheet.')
         return redirect(url_for('main.home'))
     
-    # Parse the data JSON
+    # Load spreadsheet data
     try:
         data = json.loads(spreadsheet.data)
     except:
         data = {}
     
+    # Load column names
+    try:
+        column_names = json.loads(spreadsheet.column_names)
+    except:
+        column_names = {}
+    
     return render_template('spreadsheet/edit.html', 
-                          spreadsheet=spreadsheet, 
-                          data=data,
-                          title=f'Edit: {spreadsheet.name}')
+                         spreadsheet=spreadsheet, 
+                         data=data,
+                         column_names=column_names)
 
 @bp.route('/save/<int:id>', methods=['POST'])
 @login_required
 def save(id):
     spreadsheet = Spreadsheet.query.get_or_404(id)
     
-    # Ensure user owns this spreadsheet
+    # Check if user owns this spreadsheet
     if spreadsheet.user_id != current_user.id:
-        return jsonify({'success': False, 'message': 'Permission denied'})
+        return jsonify({
+            'success': False,
+            'message': 'You do not have permission to save this spreadsheet.'
+        })
     
-    # Get data from request
-    data = request.json.get('data', {})
-    
-    # Update spreadsheet
-    spreadsheet.data = json.dumps(data)
-    db.session.commit()
-    
-    return jsonify({'success': True}) 
+    try:
+        data = request.json.get('data', {})
+        column_names = request.json.get('column_names', {})
+        
+        spreadsheet.data = json.dumps(data)
+        spreadsheet.column_names = json.dumps(column_names)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Spreadsheet saved successfully.'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error saving spreadsheet: {str(e)}'
+        }) 

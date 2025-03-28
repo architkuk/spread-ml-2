@@ -172,18 +172,41 @@ def list_models(spreadsheet_id):
             'message': 'Unauthorized access to spreadsheet'
         })
     
-    # Get models for this spreadsheet
-    models = MLModel.query.filter_by(spreadsheet_id=spreadsheet_id).all()
+    # Get all models for this user through their spreadsheets
+    models = MLModel.query.join(Spreadsheet).filter(Spreadsheet.user_id == current_user.id).all()
     model_list = []
     
     for model in models:
+        # Get the source spreadsheet's column names and types
+        source_spreadsheet = Spreadsheet.query.get(model.spreadsheet_id)
+        try:
+            source_column_names = json.loads(source_spreadsheet.column_names)
+        except:
+            source_column_names = {}
+            
+        try:
+            source_data = json.loads(source_spreadsheet.data)
+            source_column_types = {}
+            for col_letter in [chr(i) for i in range(65, 75)]:  # A through J
+                col_type = detect_column_type(source_data, col_letter)
+                if col_type:
+                    source_column_types[col_letter] = col_type
+        except:
+            source_column_types = {}
+        
         model_data = {
             'id': model.id,
             'name': model.name,
             'type': model.model_type,
             'created_at': model.created_at.strftime('%Y-%m-%d %H:%M'),
             'input_columns': json.loads(model.input_columns),
-            'output_column': model.output_column
+            'output_column': model.output_column,
+            'source_spreadsheet': {
+                'id': model.spreadsheet_id,
+                'name': source_spreadsheet.name
+            },
+            'source_column_names': source_column_names,
+            'source_column_types': source_column_types
         }
         
         # Add metrics if available

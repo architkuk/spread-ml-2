@@ -6,7 +6,7 @@ from app import db
 
 # Demo credentials
 DEMO_USERNAME = "demo"
-DEMO_PASSWORD = "demo123"
+DEMO_PASSWORD = "cNrV70Mr$4#%"
 
 @bp.route('/login', methods=['GET', 'POST'])
 def login():

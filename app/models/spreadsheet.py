@@ -12,6 +12,9 @@ class Spreadsheet(db.Model):
     # Store spreadsheet data as JSON string
     data = db.Column(db.Text, default='{}')
     
+    # Store column names as JSON string
+    column_names = db.Column(db.Text, default='{}')
+    
     # Add relationship to ML models
     models = db.relationship('MLModel', backref='spreadsheet', lazy='dynamic', cascade='all, delete-orphan')
     
