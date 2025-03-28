@@ -3,3 +3,4 @@ flask-sqlalchemy==2.5.1
 flask-login==0.5.0
 scikit-learn==1.0.2
 numpy==1.21.6
+--only-binary :all:
