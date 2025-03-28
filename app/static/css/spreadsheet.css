@@ -95,7 +95,18 @@
 }
 
 .cell:focus {
-    background-color: #f0f8ff;
+    background-color: #e3f2fd;
+    z-index: 1;
+}
+
+.cell.selected {
+    background-color: #bbdefb;
+    z-index: 0;
+}
+
+.cell.selected:focus {
+    background-color: #90caf9;
+    z-index: 2;
 }
 
 .row-header, .col-header {
@@ -247,3 +258,8 @@
     border: none;
     outline: none;
   }
+
+  .spreadsheet-container {
+    margin-top: 2rem;
+  }
+  

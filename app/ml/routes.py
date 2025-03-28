@@ -9,6 +9,7 @@ import numpy as np
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score, accuracy_score
+from sklearn.preprocessing import LabelEncoder
 
 @bp.route('/create', methods=['POST'])
 @login_required
@@ -109,10 +110,12 @@ def train_model(data, input_cols, output_col, model_type):
             if model_type == "regression":
                 y.append(float(y_val))
             else:
-                y.append(y_val)
+                y.append(y_val)  # Keep string labels for classification
         except ValueError:
-            # Skip rows with non-numeric output
-            continue
+            # Skip rows with non-numeric output for regression
+            if model_type == "regression":
+                continue
+            y.append(y_val)  # Keep string labels for classification
     
     # Check if we have enough data
     if len(X) < 2:
@@ -139,19 +142,21 @@ def train_model(data, input_cols, output_col, model_type):
             'intercept': float(model.intercept_)
         }
     else:  # classification
-        # Convert to binary for demo purposes
-        y_train_binary = (y_train > np.median(y_train)).astype(int)
-        y_test_binary = (y_test > np.median(y_test)).astype(int)
+        # Use LabelEncoder to convert string labels to numeric
+        label_encoder = LabelEncoder()
+        y_train_encoded = label_encoder.fit_transform(y_train)
+        y_test_encoded = label_encoder.transform(y_test)
         
         model = LogisticRegression(max_iter=1000)
-        model.fit(X_train, y_train_binary)
+        model.fit(X_train, y_train_encoded)
         
         # Evaluate
         y_pred = model.predict(X_test)
         metrics = {
-            'accuracy': float(accuracy_score(y_test_binary, y_pred)),
+            'accuracy': float(accuracy_score(y_test_encoded, y_pred)),
             'coef': model.coef_.tolist(),
-            'intercept': float(model.intercept_[0])
+            'intercept': model.intercept_.tolist(),
+            'classes': label_encoder.classes_.tolist()  # Store the mapping of numeric to string labels
         }
     
     return X, y, metrics
@@ -246,24 +251,50 @@ def evaluate(model_id):
                 if i < len(coef):
                     result += coef[i] * val
         else:
-            # For classification, apply logistic regression
-            coef = metrics.get('coef', [])[0] if metrics.get('coef') else []
-            intercept = metrics.get('intercept', 0)
-            # Calculate log-odds
-            log_odds = intercept
-            for i, val in enumerate(input_values):
-                if i < len(coef):
-                    log_odds += coef[i] * val
+            # For classification, calculate probabilities for each class
+            coef = metrics.get('coef', [])
+            intercepts = metrics.get('intercept', [])
+            classes = metrics.get('classes', [])
             
-            # Convert to probability using sigmoid function
-            import math
-            probability = 1 / (1 + math.exp(-log_odds))
-            # Classification result (0 or 1)
-            result = 1 if probability > 0.5 else 0
+            if not coef or not intercepts or not classes:
+                raise ValueError("Missing model parameters for classification")
+            
+            # For binary classification, we only have one set of coefficients
+            if len(classes) == 2:
+                # Calculate log-odds for the positive class
+                log_odds = intercepts[0]
+                for i, val in enumerate(input_values):
+                    if i < len(coef[0]):
+                        log_odds += coef[0][i] * val
+                
+                # Convert to probability using sigmoid
+                probability = 1 / (1 + np.exp(-log_odds))
+                
+                # Get the predicted class
+                predicted_class_index = 1 if probability > 0.5 else 0
+                result = classes[predicted_class_index]
+            else:
+                # For multi-class classification
+                # Calculate log-odds for each class
+                log_odds = []
+                for i in range(len(classes)):
+                    log_odds_i = intercepts[i]
+                    for j, val in enumerate(input_values):
+                        if j < len(coef[i]):
+                            log_odds_i += coef[i][j] * val
+                    log_odds.append(log_odds_i)
+                
+                # Convert log-odds to probabilities using softmax
+                exp_log_odds = np.exp(log_odds)
+                probabilities = exp_log_odds / np.sum(exp_log_odds)
+                
+                # Get the class with highest probability
+                predicted_class_index = np.argmax(probabilities)
+                result = classes[predicted_class_index]
         
         return jsonify({
             'success': True,
-            'result': float(result)
+            'result': result
         })
         
     except Exception as e:

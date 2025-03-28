@@ -4,6 +4,10 @@ from app.auth import bp
 from app.models.user import User
 from app import db
 
+# Demo credentials
+DEMO_USERNAME = "demo"
+DEMO_PASSWORD = "demo123"
+
 @bp.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
@@ -13,18 +17,19 @@ def login():
         username = request.form.get('username')
         password = request.form.get('password')
         
-        # For demo, create user if not exists
-        user = User.query.filter_by(username=username).first()
-        if not user:
-            user = User(username=username)
-            user.set_password(password)
-            db.session.add(user)
-            db.session.commit()
-        
-        if user and user.check_password(password):
+        # Only allow demo account
+        if username == DEMO_USERNAME and password == DEMO_PASSWORD:
+            # Create or get demo user
+            user = User.query.filter_by(username=username).first()
+            if not user:
+                user = User(username=username)
+                user.set_password(password)
+                db.session.add(user)
+                db.session.commit()
+            
             login_user(user)
             return redirect(url_for('main.home'))
-        flash('Invalid username or password')
+        flash('Invalid credentials. Please contact the administrator for access.', 'error')
     
     return render_template('auth/login.html')
 

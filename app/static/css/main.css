@@ -67,8 +67,8 @@ nav ul li a:hover {
 
 /* Main content */
 main {
-    padding: 2rem 0;
-    min-height: calc(100vh - 140px);
+    padding: 0.5rem 0;
+    min-height: calc(100vh - 160px);
 }
 
 /* Footer */
@@ -145,6 +145,7 @@ footer {
 
 /* Welcome page */
 .welcome {
+    margin-top: 2rem;
     text-align: center;
 }
 

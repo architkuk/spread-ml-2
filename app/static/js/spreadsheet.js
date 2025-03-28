@@ -21,6 +21,9 @@ document.addEventListener('DOMContentLoaded', function () {
   
     // Track the currently selected cell
     let selectedCell = null;
+    let selectionStart = null;
+    let selectionEnd = null;
+    let isSelecting = false;
   
     // -------------------------------
     // Load Initial Spreadsheet Data
@@ -306,11 +309,112 @@ document.addEventListener('DOMContentLoaded', function () {
               evaluateFormula(input, r, c);
             }
           });
-  
-          // Update the editor bar when the cell is focused
+
+          // Handle mouse events for selection
+          input.addEventListener('mousedown', function(e) {
+            isSelecting = true;
+            selectionStart = { row: r, col: c };
+            selectionEnd = { row: r, col: c };
+            updateSelection();
+            e.preventDefault(); // Prevent focus from being removed
+          });
+
+          input.addEventListener('mouseover', function(e) {
+            if (isSelecting) {
+              selectionEnd = { row: r, col: c };
+              updateSelection();
+            }
+          });
+
+          document.addEventListener('mouseup', function(e) {
+            if (isSelecting) {
+              isSelecting = false;
+              // Focus the last selected cell
+              const lastCell = document.querySelector(
+                `.cell[data-row="${selectionEnd.row}"][data-col="${selectionEnd.col}"]`
+              );
+              if (lastCell) {
+                lastCell.focus();
+              }
+            }
+          });
+
+          // Handle copy event
+          input.addEventListener('copy', function(e) {
+            if (!selectionStart || !selectionEnd) return;
+            
+            e.preventDefault();
+            
+            // Get the bounds of the selection
+            const minRow = Math.min(selectionStart.row, selectionEnd.row);
+            const maxRow = Math.max(selectionStart.row, selectionEnd.row);
+            const minCol = Math.min(selectionStart.col, selectionEnd.col);
+            const maxCol = Math.max(selectionStart.col, selectionEnd.col);
+            
+            // Build the copied data
+            const copiedData = [];
+            for (let row = minRow; row <= maxRow; row++) {
+              const rowData = [];
+              for (let col = minCol; col <= maxCol; col++) {
+                const cellKey = `${row}-${col}`;
+                rowData.push(spreadsheetData[cellKey] || '');
+              }
+              copiedData.push(rowData.join('\t'));
+            }
+            
+            // Copy to clipboard
+            e.clipboardData.setData('text', copiedData.join('\n'));
+          });
+
+          // Handle paste events for multi-cell paste
+          input.addEventListener('paste', function(e) {
+            e.preventDefault();
+            const pastedData = e.clipboardData.getData('text');
+            const pastedRows = pastedData.split('\n').map(row => row.split('\t'));
+            
+            // Get the starting position
+            const startRow = parseInt(input.dataset.row);
+            const startCol = parseInt(input.dataset.col);
+            
+            // Process each row and column
+            pastedRows.forEach((row, rowOffset) => {
+              row.forEach((value, colOffset) => {
+                const targetRow = startRow + rowOffset;
+                const targetCol = startCol + colOffset;
+                
+                // Check if we're within bounds
+                if (targetRow < rows && targetCol < cols) {
+                  const targetCell = document.querySelector(
+                    `.cell[data-row="${targetRow}"][data-col="${targetCol}"]`
+                  );
+                  if (targetCell) {
+                    targetCell.value = value;
+                    updateData(targetRow, targetCol, value);
+                    if (value && value.startsWith('=')) {
+                      evaluateFormula(targetCell, targetRow, targetCol);
+                    }
+                  }
+                }
+              });
+            });
+          });
+
           input.addEventListener('focus', function () {
             selectedCell = input;
-            editorInput.value = input.value;
+            const cellKey = `${r}-${c}`;
+            const rawValue = spreadsheetData[cellKey];
+            // Show raw formula if available, otherwise show displayed value
+            if (rawValue && rawValue.startsWith('=')) {
+              editorInput.value = rawValue;
+            } else {
+              editorInput.value = input.value;
+            }
+            // Clear any existing selection when focusing a cell
+            if (!isSelecting) {
+              selectionStart = null;
+              selectionEnd = null;
+              updateSelection();
+            }
           });
   
           // Keyboard navigation for cells
@@ -389,6 +493,10 @@ document.addEventListener('DOMContentLoaded', function () {
         if (selectedCell) {
           selectedCell.value = editorInput.value;
           updateData(selectedCell.dataset.row, selectedCell.dataset.col, editorInput.value);
+          // Evaluate formula if it starts with '='
+          if (editorInput.value && editorInput.value.startsWith('=')) {
+            evaluateFormula(selectedCell, selectedCell.dataset.row, selectedCell.dataset.col);
+          }
         }
       });
     }
@@ -582,5 +690,35 @@ document.addEventListener('DOMContentLoaded', function () {
         saveSpreadsheet();
       }
     });
+
+    /**
+     * Update the visual selection of cells
+     */
+    function updateSelection() {
+      // Remove selection from all cells
+      document.querySelectorAll('.cell').forEach(cell => {
+        cell.classList.remove('selected');
+      });
+
+      if (!selectionStart || !selectionEnd) return;
+
+      // Get the bounds of the selection
+      const minRow = Math.min(selectionStart.row, selectionEnd.row);
+      const maxRow = Math.max(selectionStart.row, selectionEnd.row);
+      const minCol = Math.min(selectionStart.col, selectionEnd.col);
+      const maxCol = Math.max(selectionStart.col, selectionEnd.col);
+
+      // Add selection to cells within bounds
+      for (let row = minRow; row <= maxRow; row++) {
+        for (let col = minCol; col <= maxCol; col++) {
+          const cell = document.querySelector(
+            `.cell[data-row="${row}"][data-col="${col}"]`
+          );
+          if (cell) {
+            cell.classList.add('selected');
+          }
+        }
+      }
+    }
   });
   

@@ -4,6 +4,8 @@ from app import db
 from app.spreadsheet import bp
 from app.models.spreadsheet import Spreadsheet
 import json
+import csv
+import io
 
 @bp.route('/create', methods=['POST'])
 @login_required
@@ -20,6 +22,53 @@ def create():
     db.session.commit()
     
     return redirect(url_for('spreadsheet.edit', id=spreadsheet.id))
+
+@bp.route('/upload_csv', methods=['POST'])
+@login_required
+def upload_csv():
+    name = request.form.get('spreadsheet_name', '').strip()
+    csv_file = request.files.get('csv_file')
+    
+    if not name:
+        flash('Spreadsheet name is required.')
+        return redirect(url_for('main.home'))
+    
+    if not csv_file or not csv_file.filename.endswith('.csv'):
+        flash('Please upload a valid CSV file.')
+        return redirect(url_for('main.home'))
+    
+    try:
+        # Read CSV file
+        stream = io.StringIO(csv_file.stream.read().decode("UTF8"), newline=None)
+        csv_data = list(csv.reader(stream))
+        
+        if not csv_data:
+            flash('CSV file must contain at least one row of data.')
+            return redirect(url_for('main.home'))
+        
+        # Convert to spreadsheet data format
+        spreadsheet_data = {}
+        for row_idx, row in enumerate(csv_data):  # Start from 0 to match spreadsheet's internal indexing
+            for col_idx, value in enumerate(row):
+                if value:  # Only store non-empty values
+                    cell_key = f"{row_idx}-{col_idx}"
+                    spreadsheet_data[cell_key] = value
+        
+        # Create new spreadsheet with CSV data
+        spreadsheet = Spreadsheet(
+            name=name,
+            user_id=current_user.id,
+            data=json.dumps(spreadsheet_data)
+        )
+        db.session.add(spreadsheet)
+        db.session.commit()
+        
+        flash('Spreadsheet created successfully from CSV file.')
+        return redirect(url_for('spreadsheet.edit', id=spreadsheet.id))
+        
+    except Exception as e:
+        flash(f'Error processing CSV file: {str(e)}')
+        return redirect(url_for('main.home'))
 
 @bp.route('/edit/<int:id>')
 @login_required

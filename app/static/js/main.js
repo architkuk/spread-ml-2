@@ -12,12 +12,4 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }, 5000);
     }
-    
-    // Initialize upload CSV button
-    const uploadCsvBtn = document.getElementById('upload-csv');
-    if (uploadCsvBtn) {
-        uploadCsvBtn.addEventListener('click', function() {
-            alert('Upload CSV functionality will be implemented here');
-        });
-    }
 }); 
