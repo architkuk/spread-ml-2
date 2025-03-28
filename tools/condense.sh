@@ -1,0 +1,1 @@
+python condenser.py . output.txt
